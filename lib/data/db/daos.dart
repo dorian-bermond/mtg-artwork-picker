@@ -742,6 +742,15 @@ class PrintDataDao extends DatabaseAccessor<AppDatabase>
 
   /// Auto-fill the mutable copy from the print_data linked to the (card, set, lang)
   /// discovered printing. No-op if no matching print_data exists.
+  /// Updates only the artist column (upserts the row if absent).
+  Future<void> setArtistForCard(int cardId, String artist) async {
+    await db.customStatement(
+      'INSERT INTO card_used_print_data (card_id, artist) VALUES (?, ?)'
+      ' ON CONFLICT(card_id) DO UPDATE SET artist = excluded.artist',
+      [cardId, artist],
+    );
+  }
+
   /// Returns all discovered printings for a card, sorted oldest → newest.
   Future<List<Map<String, Object?>>> getDiscoveredPrintingsForCard(
     int cardId,

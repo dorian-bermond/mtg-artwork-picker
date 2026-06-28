@@ -306,12 +306,13 @@ class DownloadPipeline {
         }
       }
 
-      if (seedRefs.isEmpty) {
-        yield _CardRunEvent(message: 'No MagicVille refs found for token "$searchName"');
-        return;
-      }
-
       tokenRefQueue = seedRefs.toSet();
+      if (tokenRefQueue.isEmpty) {
+        yield _CardRunEvent(
+          message: 'No MagicVille refs found for token "$searchName" — will try Scryfall fallback',
+        );
+        // Don't return: fall through so the Scryfall fallback section runs below.
+      }
     } else if (seedFromNameOnly) {
       yield const _CardRunEvent(message: 'Searching MagicVille by name…');
       final ref = await magicville.tryFindCardRefByName(faceName);
@@ -1099,6 +1100,8 @@ class DownloadPipeline {
               overrideScryfallId: tokenScryfallId,
               seedFromNameOnly: false,
               importTokens: false,
+              useScryfallFallback: useScryfallFallback,
+              skipBasicLands: skipBasicLands,
             );
           } catch (e) {
             yield _CardRunEvent(message: 'Token $tokenName failed: $e');
