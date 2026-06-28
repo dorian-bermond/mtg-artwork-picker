@@ -325,21 +325,22 @@ class DownloadPipeline {
       yield const _CardRunEvent(message: 'Searching MagicVille by name…');
       final ref = await magicville.tryFindCardRefByName(faceName);
       if (ref == null) {
-        yield _CardRunEvent(message: 'No MagicVille ref found for $faceName');
-        return;
+        yield _CardRunEvent(message: 'No MagicVille ref found for "$faceName"');
+        // Fall through — refQueue will be empty and fallbacks will fire.
+      } else {
+        yield _CardRunEvent(message: 'Name search matched ref=$ref');
+        final mv = await magicville.tryFetchArtworkInfo(ref: ref);
+        if (mv == null) {
+          yield _CardRunEvent(message: 'No artwork page for ref=$ref');
+          // Fall through — refQueue will be empty and fallbacks will fire.
+        } else {
+          seed = mv;
+          seedRef = ref;
+          yield _CardRunEvent(
+            message: 'Seed $ref: ${mv.length} artwork(s), ${mv.first.discoveredRefs.length} edition(s) listed',
+          );
+        }
       }
-      yield _CardRunEvent(message: 'Name search matched ref=$ref');
-      // Fetch the artwork page — it lists all print editions via ?ref= links.
-      final mv = await magicville.tryFetchArtworkInfo(ref: ref);
-      if (mv == null) {
-        yield _CardRunEvent(message: 'No artwork page for ref=$ref');
-        return;
-      }
-      seed = mv;
-      seedRef = ref;
-      yield _CardRunEvent(
-        message: 'Seed $ref: ${mv.length} artwork(s), ${mv.first.discoveredRefs.length} edition(s) listed',
-      );
     } else {
       yield const _CardRunEvent(message: 'Finding MagicVille seed…');
 
@@ -380,7 +381,7 @@ class DownloadPipeline {
     if (tokenRefQueue != null) {
       refQueue = tokenRefQueue;
     } else if (seedFromNameOnly) {
-      refQueue = {?seedRef, ...seed!.first.discoveredRefs};
+      refQueue = seed != null ? {?seedRef, ...seed.first.discoveredRefs} : {};
     } else {
       final initial = <String>{?seedRef, ...seed!.first.discoveredRefs};
       for (final p in printings) {
@@ -397,6 +398,7 @@ class DownloadPipeline {
 
     final seenImids = <String>{};
     int downloadedCount = 0;
+    int existingMvCount = 0;
     int tokenRefsMatched = 0;
     int tokenRefsMissed = 0;
 
@@ -441,6 +443,7 @@ class DownloadPipeline {
             remoteId: remoteId,
           );
           if (exists) {
+            existingMvCount++;
             yield _CardRunEvent(message: '$ref: imid=$remoteId already saved');
             continue;
           }
@@ -505,7 +508,7 @@ class DownloadPipeline {
     }
 
     // Fallback sources — tried in order when MagicVille yielded nothing.
-    if (downloadedCount == 0 && fallbacks.isNotEmpty) {
+    if (downloadedCount == 0 && existingMvCount == 0 && fallbacks.isNotEmpty) {
       yield const _CardRunEvent(message: 'No MagicVille artworks — trying fallbacks…');
       for (final source in fallbacks) {
         final artworks = await source.tryFetch(
@@ -629,6 +632,7 @@ class DownloadPipeline {
     bool seedFromNameOnly = false,
     bool importTokens = false,
     bool useScryfallFallback = false,
+    bool skipBasicLands = false,
   }) async* {
     // --------------------------------------------------
     // 1) Scryfall lookup — by ID for tokens, fuzzy for regular cards
@@ -655,6 +659,14 @@ class DownloadPipeline {
         (named['layout'] as String?) == 'token' ||
         (named['layout'] as String?) == 'emblem';
 
+    final typeLine = (named['type_line'] as String?)?.toLowerCase() ?? '';
+    final isBasicLand = typeLine.startsWith('basic land');
+
+    if (skipBasicLands && isBasicLand) {
+      yield const _CardRunEvent(message: 'Basic land — skipped.');
+      return;
+    }
+
     final printsUri = named['prints_search_uri'] as String?;
     if (printsUri == null) {
       yield const _CardRunEvent(message: 'No prints_search_uri; skipping.');
@@ -666,7 +678,9 @@ class DownloadPipeline {
     // Build the fallback source list now that the unfiltered prints URI is
     // known. ScryfallArtworkSource uses it (without the lang filter) so that
     // language-exclusive artworks (e.g. Japanese promos) are included.
-    final fallbacks = useScryfallFallback
+    // Basic lands are skipped: MagicVille has exhaustive coverage and Scryfall
+    // would flood the library with hundreds of basic-land printings.
+    final fallbacks = (useScryfallFallback && !isBasicLand)
         ? <ArtworkSource>[
             ScryfallArtworkSource(
               scryfall: scryfall,
@@ -1268,6 +1282,7 @@ class DownloadPipeline {
     bool runFromNameOnly = false,
     bool importTokens = false,
     bool useScryfallFallback = false,
+    bool skipBasicLands = false,
   }) async* {
     log?.add('Starting project download (all cards)');
     final providerId = SourceProviderId.scryfallMagicville.dbValue;
@@ -1305,6 +1320,7 @@ class DownloadPipeline {
         seedFromNameOnly: runFromNameOnly,
         importTokens: importTokens,
         useScryfallFallback: useScryfallFallback,
+        skipBasicLands: skipBasicLands,
       )) {
         discovered += ev.discoveredDelta;
         downloaded += ev.downloadedDelta;
@@ -1349,6 +1365,7 @@ class DownloadPipeline {
     bool runFromNameOnly = false,
     bool importTokens = false,
     bool useScryfallFallback = false,
+    bool skipBasicLands = false,
   }) async* {
     log?.add('Starting project download (missing cards)');
     final providerId = SourceProviderId.scryfallMagicville.dbValue;
@@ -1375,6 +1392,7 @@ class DownloadPipeline {
         seedFromNameOnly: runFromNameOnly,
         importTokens: importTokens,
         useScryfallFallback: useScryfallFallback,
+        skipBasicLands: skipBasicLands,
       )) {
         discovered += ev.discoveredDelta;
         downloaded += ev.downloadedDelta;
@@ -1419,6 +1437,7 @@ class DownloadPipeline {
     bool runFromNameOnly = false,
     bool importTokens = false,
     bool useScryfallFallback = false,
+    bool skipBasicLands = false,
   }) async* {
     log?.add('Starting project download (pending cards only)');
     final providerId = SourceProviderId.scryfallMagicville.dbValue;
@@ -1445,6 +1464,7 @@ class DownloadPipeline {
         seedFromNameOnly: runFromNameOnly,
         importTokens: importTokens,
         useScryfallFallback: useScryfallFallback,
+        skipBasicLands: skipBasicLands,
       )) {
         discovered += ev.discoveredDelta;
         downloaded += ev.downloadedDelta;

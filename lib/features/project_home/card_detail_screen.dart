@@ -11,10 +11,12 @@ import 'package:go_router/go_router.dart';
 import 'package:drift/drift.dart' hide Column;
 
 import '../../core/template_registry.dart';
+import '../../core/thumb_path.dart';
 import 'frame_fullscreen_page.dart';
 import '../../data/db/app_database.dart' as db;
 import '../../data/models/provider_id.dart';
 import '../../providers/providers.dart';
+import '../../services/discard_service.dart';
 import '../../services/download_pipeline.dart';
 
 class CardDetailScreen extends ConsumerStatefulWidget {
@@ -189,7 +191,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
 
   Future<void> _showRefreshDialog(db.Card card) async {
     bool showLogs = _showLogsDuringRefresh;
-    bool scryfallFallback = false;
+    bool scryfallFallback = true;
 
     final isToken =
         card.layout == 'token' || card.layout == 'emblem';
@@ -217,7 +219,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                   value: scryfallFallback,
                   onChanged: (v) =>
                       setLocal(() => scryfallFallback = v ?? false),
-                  title: const Text('Scryfall art_crop fallback'),
+                  title: const Text('Scryfall art fallback'),
                   subtitle: const Text(
                     'Use Scryfall art images when MagicVille has nothing',
                   ),
@@ -545,6 +547,146 @@ class _ArtworksTabState extends ConsumerState<_ArtworksTab> {
     }
   }
 
+  static const _scryfallFallbackProviderId = 'scryfall_artcrop';
+
+  static const _gridDelegate = SliverGridDelegateWithFixedCrossAxisCount(
+    crossAxisCount: 2,
+    childAspectRatio: 0.75,
+    crossAxisSpacing: 12,
+    mainAxisSpacing: 12,
+  );
+
+  Widget _artworkCard(
+    db.Artwork a,
+    int globalIndex,
+    db.AppDatabase database,
+    DiscardService discard,
+    ThumbPath thumbPath,
+  ) {
+    final isPreferred = widget.card.preferredArtworkId == a.id;
+    return InkWell(
+      onTap: () {
+        final uri = Uri(
+          path:
+              '/projects/${widget.projectId}/cards/${widget.card.id}/artworks/view',
+          queryParameters: {
+            'index': '$globalIndex',
+            'title': widget.card.name,
+            'showDiscarded': widget.showDiscarded ? '1' : '0',
+          },
+        );
+        context.push(uri.toString());
+      },
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: FutureBuilder<String>(
+                future: thumbPath.thumbForOriginal(
+                  projectId: widget.projectId,
+                  originalPath: a.localPath,
+                ),
+                builder: (context, thumbSnap) {
+                  final tp = thumbSnap.data;
+                  if (tp == null) {
+                    return Container(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
+                      child: const Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  return Image.file(
+                    File(tp),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Container(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
+                      child: const Center(
+                        child: Icon(Icons.broken_image_outlined),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            Positioned(
+              left: 8,
+              bottom: 8,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  child: Text(
+                    '${a.width}×${a.height}',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+              ),
+            ),
+            if (isPreferred)
+              const Positioned(
+                top: 8,
+                left: 8,
+                child: Icon(Icons.check_circle, color: Colors.green),
+              ),
+            if (a.isDiscarded)
+              const Positioned(
+                top: 8,
+                right: 8,
+                child: Icon(Icons.delete_forever, color: Colors.red),
+              ),
+            Positioned(
+              right: 8,
+              bottom: 8,
+              child: Row(
+                children: [
+                  IconButton.filledTonal(
+                    tooltip: 'Set preferred',
+                    onPressed: a.isDiscarded
+                        ? null
+                        : () => database.cardsDao.setPreferredArtwork(
+                              widget.card.id,
+                              a.id,
+                            ),
+                    icon: const Icon(Icons.star),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filledTonal(
+                    tooltip: 'Discard',
+                    onPressed: a.isDiscarded
+                        ? null
+                        : () async {
+                            await discard.discardArtwork(
+                              projectId: widget.projectId,
+                              artworkId: a.id,
+                            );
+                            if (widget.card.preferredArtworkId == a.id) {
+                              await database.cardsDao.setPreferredArtwork(
+                                widget.card.id,
+                                null,
+                              );
+                            }
+                          },
+                    icon: const Icon(Icons.delete_outline),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final database = ref.read(dbProvider);
@@ -558,162 +700,80 @@ class _ArtworksTabState extends ConsumerState<_ArtworksTab> {
       ),
       builder: (context, snap) {
         final arts = snap.data ?? const [];
+        final primaryArts = arts
+            .where((a) => a.sourceProviderId != _scryfallFallbackProviderId)
+            .toList();
+        final fallbackArts = arts
+            .where((a) => a.sourceProviderId == _scryfallFallbackProviderId)
+            .toList();
 
-        return GridView.builder(
-          padding: const EdgeInsets.all(12),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            childAspectRatio: 0.75,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-          ),
-          itemCount: arts.length + 1,
-          itemBuilder: (context, i) {
-            if (i == 0) {
-              return InkWell(
-                onTap: _adding ? null : _addCustomArtwork,
-                child: Card(
-                  child: Center(
-                    child: _adding
-                        ? const CircularProgressIndicator()
-                        : const Icon(
-                            Icons.add_photo_alternate_outlined,
-                            size: 48,
+        return CustomScrollView(
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.all(12),
+              sliver: SliverGrid(
+                gridDelegate: _gridDelegate,
+                delegate: SliverChildBuilderDelegate(
+                  (context, i) {
+                    if (i == 0) {
+                      return InkWell(
+                        onTap: _adding ? null : _addCustomArtwork,
+                        child: Card(
+                          child: Center(
+                            child: _adding
+                                ? const CircularProgressIndicator()
+                                : const Icon(
+                                    Icons.add_photo_alternate_outlined,
+                                    size: 48,
+                                  ),
                           ),
-                  ),
-                ),
-              );
-            }
-
-            final a = arts[i - 1];
-            final isPreferred = widget.card.preferredArtworkId == a.id;
-
-            return InkWell(
-              onTap: () {
-                final uri = Uri(
-                  path:
-                      '/projects/${widget.projectId}/cards/${widget.card.id}/artworks/view',
-                  queryParameters: {
-                    'index': '${i - 1}',
-                    'title': widget.card.name,
-                    'showDiscarded': widget.showDiscarded ? '1' : '0',
-                  },
-                );
-                context.push(uri.toString());
-              },
-              child: Card(
-                clipBehavior: Clip.antiAlias,
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: FutureBuilder<String>(
-                        future: thumbPath.thumbForOriginal(
-                          projectId: widget.projectId,
-                          originalPath: a.localPath,
                         ),
-                        builder: (context, thumbSnap) {
-                          final tp = thumbSnap.data;
-                          if (tp == null) {
-                            return Container(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.surfaceContainerHighest,
-                              child: const Center(
-                                child: CircularProgressIndicator(),
-                              ),
-                            );
-                          }
-                          return Image.file(
-                            File(tp),
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) => Container(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.surfaceContainerHighest,
-                              child: const Center(
-                                child: Icon(Icons.broken_image_outlined),
-                              ),
-                            ),
+                      );
+                    }
+                    final a = primaryArts[i - 1];
+                    return _artworkCard(
+                      a,
+                      arts.indexOf(a),
+                      database,
+                      discard,
+                      thumbPath,
+                    );
+                  },
+                  childCount: primaryArts.length + 1,
+                ),
+              ),
+            ),
+            if (fallbackArts.isNotEmpty)
+              SliverToBoxAdapter(
+                child: ExpansionTile(
+                  title: Text(
+                    'Scryfall art (${fallbackArts.length})',
+                  ),
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                      child: GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        padding: EdgeInsets.zero,
+                        gridDelegate: _gridDelegate,
+                        itemCount: fallbackArts.length,
+                        itemBuilder: (context, i) {
+                          final a = fallbackArts[i];
+                          return _artworkCard(
+                            a,
+                            arts.indexOf(a),
+                            database,
+                            discard,
+                            thumbPath,
                           );
                         },
-                      ),
-                    ),
-                    Positioned(
-                      left: 8,
-                      bottom: 8,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.6),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          child: Text(
-                            '${a.width}×${a.height}',
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (isPreferred)
-                      const Positioned(
-                        top: 8,
-                        left: 8,
-                        child: Icon(Icons.check_circle, color: Colors.green),
-                      ),
-                    if (a.isDiscarded)
-                      const Positioned(
-                        top: 8,
-                        right: 8,
-                        child: Icon(Icons.delete_forever, color: Colors.red),
-                      ),
-                    Positioned(
-                      right: 8,
-                      bottom: 8,
-                      child: Row(
-                        children: [
-                          IconButton.filledTonal(
-                            tooltip: 'Set preferred',
-                            onPressed: a.isDiscarded
-                                ? null
-                                : () => database.cardsDao.setPreferredArtwork(
-                                      widget.card.id,
-                                      a.id,
-                                    ),
-                            icon: const Icon(Icons.star),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton.filledTonal(
-                            tooltip: 'Discard',
-                            onPressed: a.isDiscarded
-                                ? null
-                                : () async {
-                                    await discard.discardArtwork(
-                                      projectId: widget.projectId,
-                                      artworkId: a.id,
-                                    );
-                                    if (widget.card.preferredArtworkId ==
-                                        a.id) {
-                                      await database.cardsDao
-                                          .setPreferredArtwork(
-                                            widget.card.id,
-                                            null,
-                                          );
-                                    }
-                                  },
-                            icon: const Icon(Icons.delete_outline),
-                          ),
-                        ],
                       ),
                     ),
                   ],
                 ),
               ),
-            );
-          },
+          ],
         );
       },
     );

@@ -26,7 +26,8 @@ class _DownloadScreenState extends ConsumerState<DownloadScreen> {
   Object? _error;
   bool _running = false;
   bool _importTokens = true;
-  bool _scryfallFallback = false;
+  bool _scryfallFallback = true;
+  bool _skipBasicLands = true;
   DownloadMode _mode = DownloadMode.all;
   final _log = DownloadRunLog();
   File? _logFile;
@@ -86,6 +87,7 @@ class _DownloadScreenState extends ConsumerState<DownloadScreen> {
           runFromNameOnly: true,
           importTokens: _importTokens,
           useScryfallFallback: _scryfallFallback,
+          skipBasicLands: _skipBasicLands,
         );
       case DownloadMode.missingOnly:
         stream = pipeline.runForProjectMissingOnly(
@@ -94,6 +96,7 @@ class _DownloadScreenState extends ConsumerState<DownloadScreen> {
           runFromNameOnly: true,
           importTokens: _importTokens,
           useScryfallFallback: _scryfallFallback,
+          skipBasicLands: _skipBasicLands,
         );
       case DownloadMode.pendingOnly:
         stream = pipeline.runForProjectPendingOnly(
@@ -102,6 +105,7 @@ class _DownloadScreenState extends ConsumerState<DownloadScreen> {
           runFromNameOnly: true,
           importTokens: _importTokens,
           useScryfallFallback: _scryfallFallback,
+          skipBasicLands: _skipBasicLands,
         );
     }
 
@@ -151,98 +155,115 @@ class _DownloadScreenState extends ConsumerState<DownloadScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Download scope',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Download scope',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
 
-              SizedBox(
-                width: double.infinity,
-                child: SegmentedButton<DownloadMode>(
-                  segments: const [
-                    ButtonSegment(
-                      value: DownloadMode.all,
-                      icon: Icon(Icons.all_inclusive),
-                      label: Text('All'),
-                    ),
-                    ButtonSegment(
-                      value: DownloadMode.missingOnly,
-                      icon: Icon(Icons.hide_image_outlined),
-                      label: Text('Missing'),
-                    ),
-                    ButtonSegment(
-                      value: DownloadMode.pendingOnly,
-                      icon: Icon(Icons.pending_outlined),
-                      label: Text('Pending'),
-                    ),
-                  ],
-                  selected: {_mode},
-                  onSelectionChanged: _running
-                      ? null
-                      : (s) => setState(() => _mode = s.first),
+                      SizedBox(
+                        width: double.infinity,
+                        child: SegmentedButton<DownloadMode>(
+                          segments: const [
+                            ButtonSegment(
+                              value: DownloadMode.all,
+                              icon: Icon(Icons.all_inclusive),
+                              label: Text('All'),
+                            ),
+                            ButtonSegment(
+                              value: DownloadMode.missingOnly,
+                              icon: Icon(Icons.hide_image_outlined),
+                              label: Text('Missing'),
+                            ),
+                            ButtonSegment(
+                              value: DownloadMode.pendingOnly,
+                              icon: Icon(Icons.pending_outlined),
+                              label: Text('Pending'),
+                            ),
+                          ],
+                          selected: {_mode},
+                          onSelectionChanged: _running
+                              ? null
+                              : (s) => setState(() => _mode = s.first),
+                        ),
+                      ),
+
+                      CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Import related tokens'),
+                        value: _importTokens,
+                        onChanged: _running
+                            ? null
+                            : (v) => setState(() => _importTokens = v ?? true),
+                      ),
+
+                      CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Scryfall art fallback'),
+                        subtitle: const Text(
+                          'Use Scryfall art images when MagicVille has nothing',
+                        ),
+                        value: _scryfallFallback,
+                        onChanged: _running
+                            ? null
+                            : (v) => setState(() => _scryfallFallback = v ?? true),
+                      ),
+
+                      CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Skip basic lands'),
+                        value: _skipBasicLands,
+                        onChanged: _running
+                            ? null
+                            : (v) => setState(() => _skipBasicLands = v ?? true),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      if (p != null) ...[
+                        Text(
+                          p.currentCardName ?? '',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 8),
+                        LinearProgressIndicator(value: progressValue),
+                        const SizedBox(height: 8),
+                        Text(p.message ?? ''),
+                        const SizedBox(height: 8),
+                        Text('Cards: ${p.processedCards}/${p.totalCards}'),
+                        Text('Artworks discovered: ${p.artworksDiscovered}'),
+                        Text('Artworks downloaded: ${p.artworksDownloaded}'),
+                      ] else ...[
+                        Text(
+                          switch (_mode) {
+                            DownloadMode.all =>
+                              'Downloads artworks for every card in this project.',
+                            DownloadMode.missingOnly =>
+                              'Downloads artworks only for cards that currently have none.',
+                            DownloadMode.pendingOnly =>
+                              'Downloads artworks only for cards not yet processed (no prior successful run).',
+                          },
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ],
+
+                      const SizedBox(height: 12),
+                      if (_error != null)
+                        Text(
+                          'Error: $_error',
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                    ],
+                  ),
                 ),
               ),
-
-              CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Import related tokens'),
-                value: _importTokens,
-                onChanged: _running
-                    ? null
-                    : (v) => setState(() => _importTokens = v ?? true),
-              ),
-
-              CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Scryfall art_crop fallback'),
-                subtitle: const Text(
-                  'Use Scryfall art images when MagicVille has nothing',
-                ),
-                value: _scryfallFallback,
-                onChanged: _running
-                    ? null
-                    : (v) => setState(() => _scryfallFallback = v ?? false),
-              ),
-
-              const SizedBox(height: 16),
-
-              if (p != null) ...[
-                Text(
-                  p.currentCardName ?? '',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
-                LinearProgressIndicator(value: progressValue),
-                const SizedBox(height: 8),
-                Text(p.message ?? ''),
-                const SizedBox(height: 8),
-                Text('Cards: ${p.processedCards}/${p.totalCards}'),
-                Text('Artworks discovered: ${p.artworksDiscovered}'),
-                Text('Artworks downloaded: ${p.artworksDownloaded}'),
-              ] else ...[
-                Text(
-                  switch (_mode) {
-                    DownloadMode.all =>
-                      'Downloads artworks for every card in this project.',
-                    DownloadMode.missingOnly =>
-                      'Downloads artworks only for cards that currently have none.',
-                    DownloadMode.pendingOnly =>
-                      'Downloads artworks only for cards not yet processed (no prior successful run).',
-                  },
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ],
 
               const SizedBox(height: 12),
-              if (_error != null)
-                Text(
-                  'Error: $_error',
-                  style: const TextStyle(color: Colors.red),
-                ),
-
-              const Spacer(),
-
               FilledButton.icon(
                 onPressed: _running ? null : _start,
                 icon: const Icon(Icons.play_arrow),
