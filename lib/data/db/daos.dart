@@ -742,6 +742,19 @@ class PrintDataDao extends DatabaseAccessor<AppDatabase>
 
   /// Auto-fill the mutable copy from the print_data linked to the (card, set, lang)
   /// discovered printing. No-op if no matching print_data exists.
+  /// Returns all discovered printings for a card, sorted oldest → newest.
+  Future<List<Map<String, Object?>>> getDiscoveredPrintingsForCard(
+    int cardId,
+  ) async {
+    final rows = await db.customSelect(
+      'SELECT set_code, lang, set_name, released_at, artists, collector_number, rarity'
+      ' FROM card_discovered_printings WHERE card_id = ?'
+      ' ORDER BY released_at ASC',
+      variables: [Variable(cardId)],
+    ).get();
+    return rows.map((r) => r.data).toList();
+  }
+
   Future<void> populateUsedFromPrinting({
     required int cardId,
     required String setCode,
@@ -766,10 +779,6 @@ class PrintDataDao extends DatabaseAccessor<AppDatabase>
     if (pdRows.isEmpty) return;
     final pd = pdRows.first.data;
 
-    // Use first artist from the comma-separated list.
-    final rawArtists = pr['artists'] as String?;
-    final artist = rawArtists?.split(',').firstOrNull?.trim();
-
     await setUsed(
       CardUsedPrintDataCompanion(
         cardId: Value(cardId),
@@ -791,7 +800,7 @@ class PrintDataDao extends DatabaseAccessor<AppDatabase>
         setName: Value(pr['set_name'] as String?),
         collectorNumber: Value(pr['collector_number'] as String?),
         rarity: Value(pr['rarity'] as String?),
-        artist: Value(artist),
+        // artist is intentionally omitted — only artwork selection sets it
       ),
     );
   }
@@ -828,6 +837,24 @@ class GlobalSettingsDao {
   Future<void> setPreferredLanguages(List<String> langs) async {
     final withEn = langs.contains('en') ? langs : ['en', ...langs];
     await setAppSetting('preferred_languages', jsonEncode(withEn));
+  }
+
+  Future<String> getDefaultLanguage() async {
+    return await getAppSetting('default_language') ?? 'en';
+  }
+
+  Future<void> setDefaultLanguage(String lang) async {
+    await setAppSetting('default_language', lang);
+  }
+
+  /// Returns true = newest first (default), false = oldest first.
+  Future<bool> getDefaultVersionNewest() async {
+    final raw = await getAppSetting('default_version_order');
+    return raw != 'oldest';
+  }
+
+  Future<void> setDefaultVersionNewest(bool newest) async {
+    await setAppSetting('default_version_order', newest ? 'newest' : 'oldest');
   }
 
   Future<int> getOrCreateBasicsProjectId() async {

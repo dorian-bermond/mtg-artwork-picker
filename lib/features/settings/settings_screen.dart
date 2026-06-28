@@ -29,6 +29,8 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Set<String> _selectedLangs = const {'en'};
+  String _defaultLang = 'en';
+  bool _defaultVersionNewest = true;
   int? _basicsProjectId;
   int? _globalFramesProjectId;
   bool _loading = true;
@@ -45,12 +47,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       dao.getPreferredLanguages(),
       dao.getOrCreateBasicsProjectId(),
       dao.getOrCreateGlobalFramesProjectId(),
+      dao.getDefaultLanguage(),
+      dao.getDefaultVersionNewest(),
     ]);
     if (mounted) {
       setState(() {
         _selectedLangs = Set<String>.from(results[0] as List<String>);
         _basicsProjectId = results[1] as int;
         _globalFramesProjectId = results[2] as int;
+        _defaultLang = results[3] as String;
+        _defaultVersionNewest = results[4] as bool;
         _loading = false;
       });
     }
@@ -67,6 +73,44 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                // ── Theme ─────────────────────────────────────────────────
+                _sectionHeader(context, Icons.palette_outlined, 'Theme'),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: SegmentedButton<ThemeMode>(
+                    segments: const [
+                      ButtonSegment(
+                        value: ThemeMode.light,
+                        icon: Icon(Icons.light_mode_outlined),
+                        label: Text('Light'),
+                      ),
+                      ButtonSegment(
+                        value: ThemeMode.dark,
+                        icon: Icon(Icons.dark_mode_outlined),
+                        label: Text('Dark'),
+                      ),
+                      ButtonSegment(
+                        value: ThemeMode.system,
+                        icon: Icon(Icons.brightness_auto_outlined),
+                        label: Text('Auto'),
+                      ),
+                    ],
+                    selected: {
+                      switch (ref.watch(themeModeProvider)) {
+                        AsyncData(:final value) => value,
+                        _ => ThemeMode.system,
+                      }
+                    },
+                    onSelectionChanged: (s) =>
+                        ref.read(themeModeProvider.notifier).setMode(s.first),
+                  ),
+                ),
+
+                const SizedBox(height: 28),
+                const Divider(),
+                const SizedBox(height: 16),
+
                 // ── Languages ─────────────────────────────────────────────
                 _sectionHeader(context, Icons.language, 'Card Languages'),
                 const SizedBox(height: 4),
@@ -106,6 +150,70 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             },
                     );
                   }).toList(),
+                ),
+
+                const SizedBox(height: 28),
+                const Divider(),
+                const SizedBox(height: 16),
+
+                // ── Version Defaults ──────────────────────────────────────
+                _sectionHeader(context, Icons.tune, 'Version Defaults'),
+                const SizedBox(height: 4),
+                Text(
+                  'When you star an artwork, these settings auto-select the matching version.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Expanded(child: Text('Default language')),
+                    DropdownButton<String>(
+                      value: _selectedLangs.contains(_defaultLang)
+                          ? _defaultLang
+                          : _selectedLangs.first,
+                      items: _selectedLangs.map((code) {
+                        final label = _kLanguages
+                            .firstWhere(
+                              (l) => l.$1 == code,
+                              orElse: () => (code, code),
+                            )
+                            .$2;
+                        return DropdownMenuItem(
+                          value: code,
+                          child: Text(label),
+                        );
+                      }).toList(),
+                      onChanged: (v) async {
+                        if (v == null) return;
+                        setState(() => _defaultLang = v);
+                        await ref
+                            .read(globalSettingsDaoProvider)
+                            .setDefaultLanguage(v);
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Expanded(child: Text('Default version')),
+                    SegmentedButton<bool>(
+                      segments: const [
+                        ButtonSegment(value: false, label: Text('Oldest')),
+                        ButtonSegment(value: true, label: Text('Newest')),
+                      ],
+                      selected: {_defaultVersionNewest},
+                      onSelectionChanged: (s) async {
+                        final v = s.first;
+                        setState(() => _defaultVersionNewest = v);
+                        await ref
+                            .read(globalSettingsDaoProvider)
+                            .setDefaultVersionNewest(v);
+                      },
+                    ),
+                  ],
                 ),
 
                 const SizedBox(height: 28),

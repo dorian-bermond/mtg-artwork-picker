@@ -78,7 +78,7 @@ class MagicVilleClient {
     }
   }
 
-  Future<List<MagicVilleArtworkInfo>> fetchArtworkInfo({
+  Future<(List<MagicVilleArtworkInfo>, List<String>)> fetchArtworkInfo({
     required String ref,
   }) async {
     final uri = Uri.parse('${_base}carte_art?ref=$ref');
@@ -86,8 +86,10 @@ class MagicVilleClient {
     return parser.parseArtworkPage(htmlText);
   }
 
-  /// Non-throwing probe: returns null if 404/parse/network/timeout error.
-  Future<List<MagicVilleArtworkInfo>?> tryFetchArtworkInfo({
+  /// Non-throwing probe: returns null on network/HTTP error.
+  /// A non-null result with an empty artwork list means the page exists but
+  /// has no scan_art image; the refs list still contains edition links.
+  Future<(List<MagicVilleArtworkInfo>, List<String>)?> tryFetchArtworkInfo({
     required String ref,
   }) async {
     try {

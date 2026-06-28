@@ -1,6 +1,5 @@
 import 'package:html/parser.dart' as hp;
 
-import '../core/errors.dart';
 
 class MagicVilleArtworkInfo {
   final String imid;
@@ -23,8 +22,10 @@ class MagicVilleArtworkInfo {
 class MagicVilleParser {
   static const _base = 'https://www.magic-ville.com/fr/';
 
-  // Returns one entry per distinct artwork on the page (pages can have multiple).
-  List<MagicVilleArtworkInfo> parseArtworkPage(String html) {
+  // Returns (artworks, discoveredRefs).
+  // artworks may be empty when the page exists but has no scan_art image.
+  // discoveredRefs is always populated from the edition links on the page.
+  (List<MagicVilleArtworkInfo>, List<String>) parseArtworkPage(String html) {
     final doc = hp.parse(html);
 
     // 1) Global artist fallback (used when a specific img has no title)
@@ -115,11 +116,7 @@ class MagicVilleParser {
       ));
     }
 
-    if (results.isEmpty) {
-      throw ParseException('MagicVille: scan_art image not found');
-    }
-
-    return results;
+    return (results, refsList);
   }
 }
 

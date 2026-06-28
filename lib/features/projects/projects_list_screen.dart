@@ -20,7 +20,6 @@ class ProjectsListScreen extends ConsumerWidget {
             tooltip: 'Settings',
             onPressed: () => context.go('/settings'),
           ),
-          _ThemeModeButton(),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -98,22 +97,3 @@ class ProjectsListScreen extends ConsumerWidget {
   }
 }
 
-class _ThemeModeButton extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final mode = switch (ref.watch(themeModeProvider)) {
-      AsyncData(:final value) => value,
-      _ => ThemeMode.system,
-    };
-    final (nextMode, icon, tooltip) = switch (mode) {
-      ThemeMode.system => (ThemeMode.light, Icons.light_mode_outlined, 'Switch to light'),
-      ThemeMode.light  => (ThemeMode.dark, Icons.dark_mode_outlined, 'Switch to dark'),
-      ThemeMode.dark   => (ThemeMode.system, Icons.brightness_auto_outlined, 'Follow system'),
-    };
-    return IconButton(
-      icon: Icon(icon),
-      tooltip: tooltip,
-      onPressed: () => ref.read(themeModeProvider.notifier).setMode(nextMode),
-    );
-  }
-}

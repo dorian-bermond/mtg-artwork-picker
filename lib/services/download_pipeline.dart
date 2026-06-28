@@ -4,7 +4,6 @@ import 'dart:io';
 
 import 'package:drift/drift.dart';
 import 'package:mtg_artwork_picker/core/normalize.dart';
-import 'package:mtg_artwork_picker/services/magicville_parser.dart';
 
 import '../data/db/app_database.dart' as db;
 import '../data/db/daos.dart' show PrintDataDao;
@@ -283,28 +282,22 @@ class DownloadPipeline {
     int faceIndex = 0,
     List<ArtworkSource> fallbacks = const [],
   }) async* {
-    List<MagicVilleArtworkInfo>? seed;
     String? seedRef;
+    List<String> seedPageRefs = [];
     // For tokens we get all illustrations at once — user sorts them out.
     Set<String>? tokenRefQueue;
 
     if (isToken) {
-      // Use MagicVille's advanced search (POST /fr/resultats) to find all refs
-      // for this token name. This returns the actual MagicVille refs regardless
-      // of whether Scryfall set codes match MagicVille's numbering.
       final searchName = faceName
           .replaceFirst(RegExp(r'\s+Token$', caseSensitive: false), '')
           .trim();
 
-      yield _CardRunEvent(
-        message: 'Searching MagicVille for token "$searchName"…',
-      );
+      yield _CardRunEvent(message: 'Searching MagicVille for token "$searchName"…');
       var seedRefs = await magicville.findAllTokenRefsForName(searchName);
       yield _CardRunEvent(
         message: '${seedRefs.length} ref(s) found${seedRefs.isNotEmpty ? ": ${seedRefs.join(", ")}" : ""}',
       );
 
-      // Fallback: simple name search when the advanced search returns nothing.
       if (seedRefs.isEmpty) {
         final fallback = await magicville.tryFindCardRefByName(searchName);
         if (fallback != null) {
@@ -314,9 +307,7 @@ class DownloadPipeline {
       }
 
       if (seedRefs.isEmpty) {
-        yield _CardRunEvent(
-          message: 'No MagicVille refs found for token "$searchName"',
-        );
+        yield _CardRunEvent(message: 'No MagicVille refs found for token "$searchName"');
         return;
       }
 
@@ -326,18 +317,17 @@ class DownloadPipeline {
       final ref = await magicville.tryFindCardRefByName(faceName);
       if (ref == null) {
         yield _CardRunEvent(message: 'No MagicVille ref found for "$faceName"');
-        // Fall through — refQueue will be empty and fallbacks will fire.
       } else {
         yield _CardRunEvent(message: 'Name search matched ref=$ref');
-        final mv = await magicville.tryFetchArtworkInfo(ref: ref);
-        if (mv == null) {
+        final result = await magicville.tryFetchArtworkInfo(ref: ref);
+        if (result == null) {
           yield _CardRunEvent(message: 'No artwork page for ref=$ref');
-          // Fall through — refQueue will be empty and fallbacks will fire.
         } else {
-          seed = mv;
+          final (artworks, pageRefs) = result;
           seedRef = ref;
+          seedPageRefs = pageRefs;
           yield _CardRunEvent(
-            message: 'Seed $ref: ${mv.length} artwork(s), ${mv.first.discoveredRefs.length} edition(s) listed',
+            message: 'Seed $ref: ${artworks.length} artwork(s), ${pageRefs.length} edition(s) listed',
           );
         }
       }
@@ -347,67 +337,89 @@ class DownloadPipeline {
       for (final p in printings) {
         final set = (p['set'] as String?)?.trim().toLowerCase();
         final collector = (p['collector_number'] as String?)?.trim();
-
-        if (set == null || set.isEmpty || collector == null || collector.isEmpty) {
-          continue;
-        }
-        // PLST (The List) and SLD (Secret Lair Drop) use Scryfall-only numbering
-        // that has no correspondence in MagicVille.
+        if (set == null || set.isEmpty || collector == null || collector.isEmpty) continue;
         if (set == 'plst' || set == 'sld') continue;
 
         final ref = _buildMagicVilleRef(set: set, collectorNumber: collector);
         yield _CardRunEvent(message: 'Trying $ref...');
-        final mv = await magicville.tryFetchArtworkInfo(ref: ref);
-        if (mv != null) {
+        final result = await magicville.tryFetchArtworkInfo(ref: ref);
+        if (result != null) {
           yield _CardRunEvent(message: 'Matched $ref...');
-          seed = mv;
+          final (_, pageRefs) = result;
           seedRef = ref;
+          seedPageRefs = pageRefs;
           break;
         }
       }
 
-      if (seed == null) {
+      if (seedRef == null) {
         yield const _CardRunEvent(message: 'No MagicVille seed page found.');
         return;
       }
     }
 
-    // Build the flat ref queue.
-    // • Name-only: seed artwork page already lists every print edition via
-    //   relative ?ref= links — those are in discoveredRefs. No Scryfall needed.
-    // • Collector-number: Scryfall-derived refs supplement the seed's cross-links.
-    // • Token: explicit ref list from the token search.
-    final Set<String> refQueue;
+    // Build the initial pending ref list.
+    // • Token: explicit refs from the token search — expanded dynamically below.
+    // • Name-only / collector-number: seed page's edition links + Scryfall refs.
+    final seenRefs = <String>{};
+    final pending = <String>[];
+
+    void enqueue(String r) { if (seenRefs.add(r)) pending.add(r); }
+
     if (tokenRefQueue != null) {
-      refQueue = tokenRefQueue;
+      tokenRefQueue.forEach(enqueue);
     } else if (seedFromNameOnly) {
-      refQueue = seed != null ? {?seedRef, ...seed.first.discoveredRefs} : {};
+      if (seedRef != null) enqueue(seedRef);
+      seedPageRefs.forEach(enqueue);
     } else {
-      final initial = <String>{?seedRef, ...seed!.first.discoveredRefs};
+      if (seedRef != null) enqueue(seedRef);
+      seedPageRefs.forEach(enqueue);
       for (final p in printings) {
         final pSet = (p['set'] as String?)?.trim().toLowerCase();
         final pCol = (p['collector_number'] as String?)?.trim();
         if (pSet == null || pSet.isEmpty || pCol == null || pCol.isEmpty) continue;
         if (pSet == 'plst' || pSet == 'sld') continue;
-        initial.add(_buildMagicVilleRef(set: pSet, collectorNumber: pCol));
+        enqueue(_buildMagicVilleRef(set: pSet, collectorNumber: pCol));
       }
-      refQueue = initial;
     }
 
-    yield _CardRunEvent(message: 'Ref queue: ${refQueue.length} ref(s) to check');
+    yield _CardRunEvent(message: 'Ref queue: ${pending.length} ref(s) to check');
+
+    // Seed mvArtists with artists already saved from MagicVille (previous runs).
+    // Scryfall fallback skips any artist already present here.
+    final existingArts = await database.artworksDao.getNonDiscardedArtworksForCard(card.id);
+    final mvArtists = <String>{};
+    for (final art in existingArts) {
+      if (art.sourceProviderId == providerId) {
+        mvArtists.add(art.artist.toLowerCase().trim());
+      }
+    }
 
     final seenImids = <String>{};
-    int downloadedCount = 0;
-    int existingMvCount = 0;
     int tokenRefsMatched = 0;
     int tokenRefsMissed = 0;
 
-    for (final ref in refQueue) {
+    // Index-based loop so newly discovered refs can be appended to [pending].
+    for (int pi = 0; pi < pending.length; pi++) {
+      final ref = pending[pi];
       try {
-        final mvList = await magicville.tryFetchArtworkInfo(ref: ref);
-        if (mvList == null) {
+        final result = await magicville.tryFetchArtworkInfo(ref: ref);
+        if (result == null) {
           if (isToken) tokenRefsMissed++;
           yield _CardRunEvent(message: '$ref: not found on MagicVille');
+          continue;
+        }
+
+        final (mvList, pageRefs) = result;
+
+        // Expand queue with edition links discovered on this page.
+        // Handles pages that have no artwork but link to other editions.
+        for (final r in pageRefs) {
+          enqueue(r);
+        }
+
+        if (mvList.isEmpty) {
+          yield _CardRunEvent(message: '$ref: page found, no artwork image — ${pageRefs.length} edition(s) queued');
           continue;
         }
 
@@ -443,7 +455,7 @@ class DownloadPipeline {
             remoteId: remoteId,
           );
           if (exists) {
-            existingMvCount++;
+            mvArtists.add(mv.artist.trim().toLowerCase());
             yield _CardRunEvent(message: '$ref: imid=$remoteId already saved');
             continue;
           }
@@ -453,8 +465,7 @@ class DownloadPipeline {
             discoveredDelta: 1,
           );
 
-          final referer =
-              'https://www.magic-ville.com/fr/carte_art?ref=$ref';
+          final referer = 'https://www.magic-ville.com/fr/carte_art?ref=$ref';
           final (bytes, contentType) = await magicville.downloadImage(
             mv.imageUrl,
             referer: referer,
@@ -493,7 +504,7 @@ class DownloadPipeline {
             ),
           );
 
-          downloadedCount++;
+          mvArtists.add(artist.toLowerCase());
           yield const _CardRunEvent(message: 'Saved.', downloadedDelta: 1);
         }
       } catch (e) {
@@ -507,9 +518,10 @@ class DownloadPipeline {
       );
     }
 
-    // Fallback sources — tried in order when MagicVille yielded nothing.
-    if (downloadedCount == 0 && existingMvCount == 0 && fallbacks.isNotEmpty) {
-      yield const _CardRunEvent(message: 'No MagicVille artworks — trying fallbacks…');
+    // Scryfall fallback — runs after MagicVille regardless of download count.
+    // Only artworks whose artist is not already covered by a MagicVille artwork
+    // are downloaded, so each distinct artistic variant is fetched at most once.
+    if (fallbacks.isNotEmpty) {
       for (final source in fallbacks) {
         final artworks = await source.tryFetch(
           faceName: faceName,
@@ -521,6 +533,9 @@ class DownloadPipeline {
           continue;
         }
         for (final artwork in artworks) {
+          final artistNorm = artwork.artist.toLowerCase().trim();
+          if (mvArtists.contains(artistNorm)) continue;
+
           if (!seenImids.add(artwork.remoteId)) continue;
           final exists = await database.artworksDao.artworkExistsByRemoteId(
             cardId: card.id,
@@ -528,11 +543,12 @@ class DownloadPipeline {
             remoteId: artwork.remoteId,
           );
           if (exists) {
+            mvArtists.add(artistNorm);
             yield _CardRunEvent(message: '${source.providerId}: ${artwork.remoteId} already saved');
             continue;
           }
           yield _CardRunEvent(
-            message: '${source.providerId}: downloading ${artwork.remoteId}…',
+            message: '${source.providerId}: downloading ${artwork.remoteId} (${artwork.artist})…',
             discoveredDelta: 1,
           );
           try {
@@ -561,13 +577,12 @@ class DownloadPipeline {
                 isDiscarded: const Value(false),
               ),
             );
-            downloadedCount++;
+            mvArtists.add(artistNorm);
             yield const _CardRunEvent(message: 'Saved.', downloadedDelta: 1);
           } catch (e) {
             yield _CardRunEvent(message: '${source.providerId}: error $e');
           }
         }
-        if (downloadedCount > 0) break;
       }
     }
   }
