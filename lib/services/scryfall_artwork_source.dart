@@ -3,14 +3,27 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import 'artwork_source.dart';
+import 'scryfall_client.dart';
 
 /// Fallback artwork source: fetches [image_uris.art_crop] from Scryfall.
-/// Covers all printings returned by the pipeline's Scryfall lookup, so
-/// every edition gets one art_crop image even when MagicVille has nothing.
+///
+/// Unlike the main pipeline fetch (which is filtered to en/fr), this queries
+/// ALL language printings via the unfiltered [printsSearchUri] so that
+/// language-exclusive artworks (e.g. Japanese promos) are included.
+/// Artworks are deduplicated by their art_crop URL so identical art shared
+/// across language variants is not downloaded twice.
 class ScryfallArtworkSource implements ArtworkSource {
+  final ScryfallClient _scryfall;
+  final String _printsSearchUri;
   final HttpClient _http;
 
-  ScryfallArtworkSource({HttpClient? http}) : _http = http ?? HttpClient() {
+  ScryfallArtworkSource({
+    required ScryfallClient scryfall,
+    required String printsSearchUri,
+    HttpClient? http,
+  })  : _scryfall = scryfall,
+        _printsSearchUri = printsSearchUri,
+        _http = http ?? HttpClient() {
     _http.connectionTimeout = const Duration(seconds: 15);
     _http.idleTimeout = const Duration(seconds: 15);
   }
@@ -25,7 +38,9 @@ class ScryfallArtworkSource implements ArtworkSource {
     required int faceIndex,
   }) async {
     final results = <SourcedArtwork>[];
-    for (final p in printings) {
+    final seenUrls = <String>{};
+
+    await for (final p in _scryfall.fetchAllPrintings(_printsSearchUri)) {
       String? url;
       String artist = 'Unknown Artist';
 
@@ -37,15 +52,14 @@ class ScryfallArtworkSource implements ArtworkSource {
         artist = (face['artist'] as String?)?.trim() ?? artist;
       }
 
-      // Fallback to top-level image_uris (single-face cards).
+      // Single-face or DFC without per-face image_uris.
       if (url == null) {
         url = (p['image_uris'] as Map?)?['art_crop'] as String?;
         artist = (p['artist'] as String?)?.trim() ?? artist;
       }
 
-      if (url == null) continue;
+      if (url == null || !seenUrls.add(url)) continue;
 
-      // Prefix the Scryfall printing ID so it's clearly namespaced.
       final remoteId = 'scryfall:${p['id'] ?? url}';
       results.add(SourcedArtwork(
         remoteId: remoteId,

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:drift/drift.dart';
 import 'package:mtg_artwork_picker/core/normalize.dart';
@@ -629,7 +628,7 @@ class DownloadPipeline {
     String? overrideScryfallId,
     bool seedFromNameOnly = false,
     bool importTokens = false,
-    List<ArtworkSource> fallbacks = const [],
+    bool useScryfallFallback = false,
   }) async* {
     // --------------------------------------------------
     // 1) Scryfall lookup — by ID for tokens, fuzzy for regular cards
@@ -663,6 +662,18 @@ class DownloadPipeline {
     }
 
     final filteredPrintsUri = _addLangFilterToPrintsUri(printsUri);
+
+    // Build the fallback source list now that the unfiltered prints URI is
+    // known. ScryfallArtworkSource uses it (without the lang filter) so that
+    // language-exclusive artworks (e.g. Japanese promos) are included.
+    final fallbacks = useScryfallFallback
+        ? <ArtworkSource>[
+            ScryfallArtworkSource(
+              scryfall: scryfall,
+              printsSearchUri: printsUri,
+            ),
+          ]
+        : const <ArtworkSource>[];
 
     final printings = <Map<String, dynamic>>[];
     final discoveredSets = <String>{};
@@ -1155,7 +1166,7 @@ class DownloadPipeline {
       projectId: projectId,
       card: card,
       providerId: providerId,
-      fallbacks: useScryfallFallback ? [ScryfallArtworkSource()] : const [],
+      useScryfallFallback: useScryfallFallback,
     )) {
       discovered += ev.discoveredDelta;
       downloaded += ev.downloadedDelta;
@@ -1224,7 +1235,7 @@ class DownloadPipeline {
       card: card,
       providerId: providerId,
       seedFromNameOnly: true,
-      fallbacks: useScryfallFallback ? [ScryfallArtworkSource()] : const [],
+      useScryfallFallback: useScryfallFallback,
     )) {
       discovered += ev.discoveredDelta;
       downloaded += ev.downloadedDelta;
@@ -1293,7 +1304,7 @@ class DownloadPipeline {
         providerId: providerId,
         seedFromNameOnly: runFromNameOnly,
         importTokens: importTokens,
-        fallbacks: useScryfallFallback ? [ScryfallArtworkSource()] : const [],
+        useScryfallFallback: useScryfallFallback,
       )) {
         discovered += ev.discoveredDelta;
         downloaded += ev.downloadedDelta;
@@ -1363,7 +1374,7 @@ class DownloadPipeline {
         providerId: providerId,
         seedFromNameOnly: runFromNameOnly,
         importTokens: importTokens,
-        fallbacks: useScryfallFallback ? [ScryfallArtworkSource()] : const [],
+        useScryfallFallback: useScryfallFallback,
       )) {
         discovered += ev.discoveredDelta;
         downloaded += ev.downloadedDelta;
@@ -1433,7 +1444,7 @@ class DownloadPipeline {
         providerId: providerId,
         seedFromNameOnly: runFromNameOnly,
         importTokens: importTokens,
-        fallbacks: useScryfallFallback ? [ScryfallArtworkSource()] : const [],
+        useScryfallFallback: useScryfallFallback,
       )) {
         discovered += ev.discoveredDelta;
         downloaded += ev.downloadedDelta;
