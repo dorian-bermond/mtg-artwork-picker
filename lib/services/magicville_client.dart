@@ -190,35 +190,55 @@ class MagicVilleClient {
   }
 
   Future<String?> tryFindCardRefByName(String name) async {
+    final refs = await findAllCardRefsByName(name);
+    return refs.isEmpty ? null : refs.first;
+  }
+
+  /// Returns ALL card refs found in MagicVille's name-search results.
+  Future<List<String>> findAllCardRefsByName(String name) async {
     final uri = Uri.parse(
       'https://www.magic-ville.com/fr/upn_search',
     ).replace(queryParameters: {'n': name.toLowerCase()});
 
     final request = await _http.postUrl(uri);
-
-    // Headers
     request.headers.set(HttpHeaders.userAgentHeader, 'Mozilla/5.0');
     request.headers.set(HttpHeaders.acceptHeader, 'text/html,*/*');
-    request.headers.set(
-      HttpHeaders.refererHeader,
-      'https://www.magic-ville.com/',
-    );
+    request.headers.set(HttpHeaders.refererHeader, 'https://www.magic-ville.com/');
 
-    // No body needed (query param already contains name)
     final response = await request.close();
-
-    if (response.statusCode != HttpStatus.ok) {
-      return null;
-    }
+    if (response.statusCode != HttpStatus.ok) return [];
 
     final body = await response.transform(utf8.decoder).join();
-
-    final match = RegExp(
-      r'''href\s*=\s*[^>]*/carte\?ref=([^"\'>\s&]+)''',
+    final seen = <String>{};
+    for (final m in RegExp(
+      r'carte(?:_art)?\?ref=([a-z0-9]+)',
       caseSensitive: false,
-    ).firstMatch(body);
+    ).allMatches(body)) {
+      final ref = m.group(1);
+      if (ref != null && ref.isNotEmpty) seen.add(ref);
+    }
+    return seen.toList();
+  }
 
-    return match?.group(1); // e.g. "col105"
+  /// Fetches the card page (carte?ref=) and extracts all artwork/card refs
+  /// linked from it. This discovers alternate-edition refs that the artwork
+  /// page cross-links don't include.
+  Future<List<String>> findRefsFromCardPage(String ref) async {
+    final uri = Uri.parse('${_base}carte?ref=$ref');
+    try {
+      final html = await _getHtml(uri);
+      final seen = <String>{};
+      for (final m in RegExp(
+        r'carte(?:_art)?\?ref=([a-z0-9]+)',
+        caseSensitive: false,
+      ).allMatches(html)) {
+        final r = m.group(1);
+        if (r != null && r.isNotEmpty) seen.add(r);
+      }
+      return seen.toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   Future<(List<int> bytes, String contentType)> downloadImage(

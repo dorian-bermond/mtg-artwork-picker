@@ -32,7 +32,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 18;
+  int get schemaVersion => 19;
 
   Future<void> _createCustomTables() async {
     await customStatement('''
@@ -267,6 +267,13 @@ class AppDatabase extends _$AppDatabase {
         try {
           await customStatement(
             'ALTER TABLE cards ADD COLUMN selected_collector_number TEXT',
+          );
+        } catch (_) {}
+      }
+      if (from < 19) {
+        try {
+          await customStatement(
+            'ALTER TABLE cards ADD COLUMN dfc_sibling_id INTEGER',
           );
         } catch (_) {}
       }

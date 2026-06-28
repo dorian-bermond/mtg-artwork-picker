@@ -31,7 +31,7 @@ class CardDetailScreen extends ConsumerStatefulWidget {
   ConsumerState<CardDetailScreen> createState() => _CardDetailScreenState();
 }
 
-enum _RefreshAction { classic, nameOnly, token }
+enum _RefreshAction { nameOnly, token }
 
 class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
   bool _showDiscarded = false;
@@ -107,6 +107,14 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                 ],
               ),
               actions: [
+                if (card.dfcSiblingId != null)
+                  IconButton(
+                    tooltip: 'Go to other side',
+                    onPressed: () => context.go(
+                      '/projects/${widget.projectId}/cards/${card.dfcSiblingId}',
+                    ),
+                    icon: const Icon(Icons.flip),
+                  ),
                 IconButton(
                   tooltip: _showDiscarded
                       ? 'Hide discarded artworks'
@@ -181,6 +189,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
 
   Future<void> _showRefreshDialog(db.Card card) async {
     bool showLogs = _showLogsDuringRefresh;
+    bool scryfallFallback = false;
 
     final isToken =
         card.layout == 'token' || card.layout == 'emblem';
@@ -203,6 +212,16 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                     'Display a live log view during refresh',
                   ),
                 ),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: scryfallFallback,
+                  onChanged: (v) =>
+                      setLocal(() => scryfallFallback = v ?? false),
+                  title: const Text('Scryfall art_crop fallback'),
+                  subtitle: const Text(
+                    'Use Scryfall art images when MagicVille has nothing',
+                  ),
+                ),
               ],
             ),
             actions: [
@@ -216,18 +235,12 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                       Navigator.of(ctx).pop(_RefreshAction.token),
                   child: const Text('Refresh token'),
                 )
-              else ...[
-                TextButton(
-                  onPressed: () =>
-                      Navigator.of(ctx).pop(_RefreshAction.nameOnly),
-                  child: const Text('Refresh from Name Only'),
-                ),
+              else
                 FilledButton(
                   onPressed: () =>
-                      Navigator.of(ctx).pop(_RefreshAction.classic),
-                  child: const Text('Classic Refresh'),
+                      Navigator.of(ctx).pop(_RefreshAction.nameOnly),
+                  child: const Text('Refresh'),
                 ),
-              ],
             ],
           ),
         );
@@ -239,18 +252,6 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
     setState(() => _showLogsDuringRefresh = showLogs);
 
     switch (action) {
-      case _RefreshAction.classic:
-        _startRefresh(
-          showLogs: showLogs,
-          run: () => ref
-              .read(downloadPipelineProvider)
-              .runForSingleCard(
-                projectId: widget.projectId,
-                cardId: widget.cardId,
-              ),
-        );
-        break;
-
       case _RefreshAction.nameOnly:
         _startRefresh(
           showLogs: showLogs,
@@ -259,6 +260,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
               .runForSingleCardNameOnly(
                 projectId: widget.projectId,
                 cardId: widget.cardId,
+                useScryfallFallback: scryfallFallback,
               ),
         );
         break;
@@ -271,6 +273,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
               .runForSingleCard(
                 projectId: widget.projectId,
                 cardId: widget.cardId,
+                useScryfallFallback: scryfallFallback,
               ),
         );
         break;
@@ -623,7 +626,7 @@ class _ArtworksTabState extends ConsumerState<_ArtworksTab> {
                           return Image.file(
                             File(tp),
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Container(
+                            errorBuilder: (_, _, _) => Container(
                               color: Theme.of(
                                 context,
                               ).colorScheme.surfaceContainerHighest,
@@ -640,7 +643,7 @@ class _ArtworksTabState extends ConsumerState<_ArtworksTab> {
                       bottom: 8,
                       child: DecoratedBox(
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.6),
+                          color: Colors.black.withValues(alpha: 0.6),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Padding(

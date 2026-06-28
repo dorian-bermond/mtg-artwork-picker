@@ -7,12 +7,16 @@ class MagicVilleArtworkInfo {
   final String imageUrl;
   final String artist;
   final List<String> discoveredRefs;
+  /// Card name extracted from the img title attribute ("X art by Y" → "X").
+  /// Null when no img has a title (rare). Used for DFC face filtering.
+  final String? pageCardName;
 
   MagicVilleArtworkInfo({
     required this.imid,
     required this.imageUrl,
     required this.artist,
     required this.discoveredRefs,
+    this.pageCardName,
   });
 }
 
@@ -36,11 +40,22 @@ class MagicVilleParser {
         .cast<String?>()
         .firstOrNull;
 
-    // 2) Discovered refs (shared by all artworks on this page)
+    // 2) Discovered refs (shared by all artworks on this page).
+    // The print-edition links on carte_art pages use a relative query-only
+    // form: <a href="?ref=uni010"> — i.e. just "?ref=xxx" with no path.
+    // We also accept fully-qualified carte_art?ref= / carte?ref= links.
     final refs = <String>{};
     for (final a in doc.querySelectorAll('a[href]')) {
       final href = a.attributes['href'] ?? '';
-      if (!href.contains('carte_art?ref=')) continue;
+      if (href.startsWith('?ref=')) {
+        // Relative form used for alternate-edition print links.
+        final ref = href.substring('?ref='.length).split('&').first.trim();
+        if (ref.isNotEmpty) refs.add(ref);
+        continue;
+      }
+      if (!href.contains('carte_art?ref=') && !href.contains('carte?ref=')) {
+        continue;
+      }
       final abs = href.startsWith('http')
           ? href
           : '$_base${href.replaceFirst(RegExp(r'^/'), '')}';
@@ -50,7 +65,10 @@ class MagicVilleParser {
     }
     final refsList = refs.toList()..sort();
 
-    // 3) Collect all scan_art images
+    // 3) Collect all scan_art images.
+    // The page card name is shared across all artworks; extract it once from
+    // the first img title that contains " art by ".
+    String? pageCardName;
     final results = <MagicVilleArtworkInfo>[];
     final seenImids = <String>{};
 
@@ -79,7 +97,11 @@ class MagicVilleParser {
       if (title != null) {
         const marker = ' art by ';
         final idx = title.toLowerCase().indexOf(marker);
-        if (idx >= 0) artist = title.substring(idx + marker.length).trim();
+        if (idx >= 0) {
+          // "Delver of Secrets art by Nils Hamm" → name before marker
+          pageCardName ??= title.substring(0, idx).trim();
+          artist = title.substring(idx + marker.length).trim();
+        }
       }
       artist ??= globalArtist;
 
@@ -89,6 +111,7 @@ class MagicVilleParser {
             'https://www.magic-ville.com/fr/scan_art?imid=${imid.trim()}',
         artist: (artist?.isNotEmpty == true) ? artist! : 'Unknown Artist',
         discoveredRefs: refsList,
+        pageCardName: pageCardName,
       ));
     }
 

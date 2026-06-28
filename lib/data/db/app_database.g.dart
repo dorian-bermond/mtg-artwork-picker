@@ -722,6 +722,17 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, Card> {
         type: DriftSqlType.string,
         requiredDuringInsert: false,
       );
+  static const VerificationMeta _dfcSiblingIdMeta = const VerificationMeta(
+    'dfcSiblingId',
+  );
+  @override
+  late final GeneratedColumn<int> dfcSiblingId = GeneratedColumn<int>(
+    'dfc_sibling_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -741,6 +752,7 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, Card> {
     scryfallId,
     isUpToDate,
     selectedCollectorNumber,
+    dfcSiblingId,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -889,6 +901,15 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, Card> {
         ),
       );
     }
+    if (data.containsKey('dfc_sibling_id')) {
+      context.handle(
+        _dfcSiblingIdMeta,
+        dfcSiblingId.isAcceptableOrUnknown(
+          data['dfc_sibling_id']!,
+          _dfcSiblingIdMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -966,6 +987,10 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, Card> {
         DriftSqlType.string,
         data['${effectivePrefix}selected_collector_number'],
       ),
+      dfcSiblingId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}dfc_sibling_id'],
+      ),
     );
   }
 
@@ -993,6 +1018,7 @@ class Card extends DataClass implements Insertable<Card> {
   final String? scryfallId;
   final bool? isUpToDate;
   final String? selectedCollectorNumber;
+  final int? dfcSiblingId;
   const Card({
     required this.id,
     required this.projectId,
@@ -1011,6 +1037,7 @@ class Card extends DataClass implements Insertable<Card> {
     this.scryfallId,
     this.isUpToDate,
     this.selectedCollectorNumber,
+    this.dfcSiblingId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1056,6 +1083,9 @@ class Card extends DataClass implements Insertable<Card> {
         selectedCollectorNumber,
       );
     }
+    if (!nullToAbsent || dfcSiblingId != null) {
+      map['dfc_sibling_id'] = Variable<int>(dfcSiblingId);
+    }
     return map;
   }
 
@@ -1100,6 +1130,9 @@ class Card extends DataClass implements Insertable<Card> {
       selectedCollectorNumber: selectedCollectorNumber == null && nullToAbsent
           ? const Value.absent()
           : Value(selectedCollectorNumber),
+      dfcSiblingId: dfcSiblingId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(dfcSiblingId),
     );
   }
 
@@ -1130,6 +1163,7 @@ class Card extends DataClass implements Insertable<Card> {
       selectedCollectorNumber: serializer.fromJson<String?>(
         json['selectedCollectorNumber'],
       ),
+      dfcSiblingId: serializer.fromJson<int?>(json['dfcSiblingId']),
     );
   }
   @override
@@ -1155,6 +1189,7 @@ class Card extends DataClass implements Insertable<Card> {
       'selectedCollectorNumber': serializer.toJson<String?>(
         selectedCollectorNumber,
       ),
+      'dfcSiblingId': serializer.toJson<int?>(dfcSiblingId),
     };
   }
 
@@ -1176,6 +1211,7 @@ class Card extends DataClass implements Insertable<Card> {
     Value<String?> scryfallId = const Value.absent(),
     Value<bool?> isUpToDate = const Value.absent(),
     Value<String?> selectedCollectorNumber = const Value.absent(),
+    Value<int?> dfcSiblingId = const Value.absent(),
   }) => Card(
     id: id ?? this.id,
     projectId: projectId ?? this.projectId,
@@ -1206,6 +1242,7 @@ class Card extends DataClass implements Insertable<Card> {
     selectedCollectorNumber: selectedCollectorNumber.present
         ? selectedCollectorNumber.value
         : this.selectedCollectorNumber,
+    dfcSiblingId: dfcSiblingId.present ? dfcSiblingId.value : this.dfcSiblingId,
   );
   Card copyWithCompanion(CardsCompanion data) {
     return Card(
@@ -1248,6 +1285,9 @@ class Card extends DataClass implements Insertable<Card> {
       selectedCollectorNumber: data.selectedCollectorNumber.present
           ? data.selectedCollectorNumber.value
           : this.selectedCollectorNumber,
+      dfcSiblingId: data.dfcSiblingId.present
+          ? data.dfcSiblingId.value
+          : this.dfcSiblingId,
     );
   }
 
@@ -1270,7 +1310,8 @@ class Card extends DataClass implements Insertable<Card> {
           ..write('frame: $frame, ')
           ..write('scryfallId: $scryfallId, ')
           ..write('isUpToDate: $isUpToDate, ')
-          ..write('selectedCollectorNumber: $selectedCollectorNumber')
+          ..write('selectedCollectorNumber: $selectedCollectorNumber, ')
+          ..write('dfcSiblingId: $dfcSiblingId')
           ..write(')'))
         .toString();
   }
@@ -1294,6 +1335,7 @@ class Card extends DataClass implements Insertable<Card> {
     scryfallId,
     isUpToDate,
     selectedCollectorNumber,
+    dfcSiblingId,
   );
   @override
   bool operator ==(Object other) =>
@@ -1315,7 +1357,8 @@ class Card extends DataClass implements Insertable<Card> {
           other.frame == this.frame &&
           other.scryfallId == this.scryfallId &&
           other.isUpToDate == this.isUpToDate &&
-          other.selectedCollectorNumber == this.selectedCollectorNumber);
+          other.selectedCollectorNumber == this.selectedCollectorNumber &&
+          other.dfcSiblingId == this.dfcSiblingId);
 }
 
 class CardsCompanion extends UpdateCompanion<Card> {
@@ -1336,6 +1379,7 @@ class CardsCompanion extends UpdateCompanion<Card> {
   final Value<String?> scryfallId;
   final Value<bool?> isUpToDate;
   final Value<String?> selectedCollectorNumber;
+  final Value<int?> dfcSiblingId;
   const CardsCompanion({
     this.id = const Value.absent(),
     this.projectId = const Value.absent(),
@@ -1354,6 +1398,7 @@ class CardsCompanion extends UpdateCompanion<Card> {
     this.scryfallId = const Value.absent(),
     this.isUpToDate = const Value.absent(),
     this.selectedCollectorNumber = const Value.absent(),
+    this.dfcSiblingId = const Value.absent(),
   });
   CardsCompanion.insert({
     this.id = const Value.absent(),
@@ -1373,6 +1418,7 @@ class CardsCompanion extends UpdateCompanion<Card> {
     this.scryfallId = const Value.absent(),
     this.isUpToDate = const Value.absent(),
     this.selectedCollectorNumber = const Value.absent(),
+    this.dfcSiblingId = const Value.absent(),
   }) : projectId = Value(projectId),
        name = Value(name),
        normalizedName = Value(normalizedName);
@@ -1394,6 +1440,7 @@ class CardsCompanion extends UpdateCompanion<Card> {
     Expression<String>? scryfallId,
     Expression<bool>? isUpToDate,
     Expression<String>? selectedCollectorNumber,
+    Expression<int>? dfcSiblingId,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -1417,6 +1464,7 @@ class CardsCompanion extends UpdateCompanion<Card> {
       if (isUpToDate != null) 'is_up_to_date': isUpToDate,
       if (selectedCollectorNumber != null)
         'selected_collector_number': selectedCollectorNumber,
+      if (dfcSiblingId != null) 'dfc_sibling_id': dfcSiblingId,
     });
   }
 
@@ -1438,6 +1486,7 @@ class CardsCompanion extends UpdateCompanion<Card> {
     Value<String?>? scryfallId,
     Value<bool?>? isUpToDate,
     Value<String?>? selectedCollectorNumber,
+    Value<int?>? dfcSiblingId,
   }) {
     return CardsCompanion(
       id: id ?? this.id,
@@ -1458,6 +1507,7 @@ class CardsCompanion extends UpdateCompanion<Card> {
       isUpToDate: isUpToDate ?? this.isUpToDate,
       selectedCollectorNumber:
           selectedCollectorNumber ?? this.selectedCollectorNumber,
+      dfcSiblingId: dfcSiblingId ?? this.dfcSiblingId,
     );
   }
 
@@ -1521,6 +1571,9 @@ class CardsCompanion extends UpdateCompanion<Card> {
         selectedCollectorNumber.value,
       );
     }
+    if (dfcSiblingId.present) {
+      map['dfc_sibling_id'] = Variable<int>(dfcSiblingId.value);
+    }
     return map;
   }
 
@@ -1543,7 +1596,8 @@ class CardsCompanion extends UpdateCompanion<Card> {
           ..write('frame: $frame, ')
           ..write('scryfallId: $scryfallId, ')
           ..write('isUpToDate: $isUpToDate, ')
-          ..write('selectedCollectorNumber: $selectedCollectorNumber')
+          ..write('selectedCollectorNumber: $selectedCollectorNumber, ')
+          ..write('dfcSiblingId: $dfcSiblingId')
           ..write(')'))
         .toString();
   }
@@ -6207,6 +6261,7 @@ typedef $$CardsTableCreateCompanionBuilder =
       Value<String?> scryfallId,
       Value<bool?> isUpToDate,
       Value<String?> selectedCollectorNumber,
+      Value<int?> dfcSiblingId,
     });
 typedef $$CardsTableUpdateCompanionBuilder =
     CardsCompanion Function({
@@ -6227,6 +6282,7 @@ typedef $$CardsTableUpdateCompanionBuilder =
       Value<String?> scryfallId,
       Value<bool?> isUpToDate,
       Value<String?> selectedCollectorNumber,
+      Value<int?> dfcSiblingId,
     });
 
 class $$CardsTableFilterComposer extends Composer<_$AppDatabase, $CardsTable> {
@@ -6319,6 +6375,11 @@ class $$CardsTableFilterComposer extends Composer<_$AppDatabase, $CardsTable> {
 
   ColumnFilters<String> get selectedCollectorNumber => $composableBuilder(
     column: $table.selectedCollectorNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get dfcSiblingId => $composableBuilder(
+    column: $table.dfcSiblingId,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -6416,6 +6477,11 @@ class $$CardsTableOrderingComposer
     column: $table.selectedCollectorNumber,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get dfcSiblingId => $composableBuilder(
+    column: $table.dfcSiblingId,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$CardsTableAnnotationComposer
@@ -6499,6 +6565,11 @@ class $$CardsTableAnnotationComposer
     column: $table.selectedCollectorNumber,
     builder: (column) => column,
   );
+
+  GeneratedColumn<int> get dfcSiblingId => $composableBuilder(
+    column: $table.dfcSiblingId,
+    builder: (column) => column,
+  );
 }
 
 class $$CardsTableTableManager
@@ -6546,6 +6617,7 @@ class $$CardsTableTableManager
                 Value<String?> scryfallId = const Value.absent(),
                 Value<bool?> isUpToDate = const Value.absent(),
                 Value<String?> selectedCollectorNumber = const Value.absent(),
+                Value<int?> dfcSiblingId = const Value.absent(),
               }) => CardsCompanion(
                 id: id,
                 projectId: projectId,
@@ -6564,6 +6636,7 @@ class $$CardsTableTableManager
                 scryfallId: scryfallId,
                 isUpToDate: isUpToDate,
                 selectedCollectorNumber: selectedCollectorNumber,
+                dfcSiblingId: dfcSiblingId,
               ),
           createCompanionCallback:
               ({
@@ -6584,6 +6657,7 @@ class $$CardsTableTableManager
                 Value<String?> scryfallId = const Value.absent(),
                 Value<bool?> isUpToDate = const Value.absent(),
                 Value<String?> selectedCollectorNumber = const Value.absent(),
+                Value<int?> dfcSiblingId = const Value.absent(),
               }) => CardsCompanion.insert(
                 id: id,
                 projectId: projectId,
@@ -6602,6 +6676,7 @@ class $$CardsTableTableManager
                 scryfallId: scryfallId,
                 isUpToDate: isUpToDate,
                 selectedCollectorNumber: selectedCollectorNumber,
+                dfcSiblingId: dfcSiblingId,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

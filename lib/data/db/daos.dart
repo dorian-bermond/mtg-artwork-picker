@@ -128,6 +128,14 @@ class CardsDao extends DatabaseAccessor<AppDatabase> with _$CardsDaoMixin {
     );
   }
 
+  Future<void> setSiblingId({
+    required int cardId,
+    required int siblingId,
+  }) {
+    return (update(cards)..where((t) => t.id.equals(cardId)))
+        .write(CardsCompanion(dfcSiblingId: Value(siblingId)));
+  }
+
   Stream<List<Card>> watchCards(int projectId, {required CardFilter filter}) {
     final q = select(cards)..where((t) => t.projectId.equals(projectId));
 
@@ -763,8 +771,8 @@ class PrintDataDao extends DatabaseAccessor<AppDatabase>
     final artist = rawArtists?.split(',').firstOrNull?.trim();
 
     await setUsed(
-      CardUsedPrintDataCompanion.insert(
-        cardId: cardId,
+      CardUsedPrintDataCompanion(
+        cardId: Value(cardId),
         lang: Value(pd['lang'] as String?),
         name: Value(pd['name'] as String?),
         flavorName: Value(pd['flavor_name'] as String?),

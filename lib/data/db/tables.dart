@@ -37,6 +37,8 @@ class Cards extends Table {
   BoolColumn get isUpToDate => boolean().nullable()();
   // Collector number of the selected printing (set by Fetch Data / version selection).
   TextColumn get selectedCollectorNumber => text().nullable()();
+  // For DFC cards: points to the card row representing the other face.
+  IntColumn get dfcSiblingId => integer().nullable()();
 }
 
 class CardDiscoveredSets extends Table {

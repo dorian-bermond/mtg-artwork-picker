@@ -11,7 +11,6 @@ import '../../services/download_pipeline.dart';
 
 enum DownloadMode { all, missingOnly, pendingOnly }
 
-enum GetDataMode { collectorNumber, nameOnly }
 
 class DownloadScreen extends ConsumerStatefulWidget {
   final int projectId;
@@ -26,8 +25,8 @@ class _DownloadScreenState extends ConsumerState<DownloadScreen> {
   DownloadProgress? _progress;
   Object? _error;
   bool _running = false;
-  GetDataMode _getDataMode = GetDataMode.nameOnly;
   bool _importTokens = true;
+  bool _scryfallFallback = false;
   DownloadMode _mode = DownloadMode.all;
   final _log = DownloadRunLog();
   File? _logFile;
@@ -84,22 +83,25 @@ class _DownloadScreenState extends ConsumerState<DownloadScreen> {
         stream = pipeline.runForProject(
           widget.projectId,
           log: _log,
-          runFromNameOnly: _getDataMode == GetDataMode.nameOnly,
+          runFromNameOnly: true,
           importTokens: _importTokens,
+          useScryfallFallback: _scryfallFallback,
         );
       case DownloadMode.missingOnly:
         stream = pipeline.runForProjectMissingOnly(
           widget.projectId,
           log: _log,
-          runFromNameOnly: _getDataMode == GetDataMode.nameOnly,
+          runFromNameOnly: true,
           importTokens: _importTokens,
+          useScryfallFallback: _scryfallFallback,
         );
       case DownloadMode.pendingOnly:
         stream = pipeline.runForProjectPendingOnly(
           widget.projectId,
           log: _log,
-          runFromNameOnly: _getDataMode == GetDataMode.nameOnly,
+          runFromNameOnly: true,
           importTokens: _importTokens,
+          useScryfallFallback: _scryfallFallback,
         );
     }
 
@@ -182,28 +184,6 @@ class _DownloadScreenState extends ConsumerState<DownloadScreen> {
                 ),
               ),
 
-              SizedBox(
-                width: double.infinity,
-                child: SegmentedButton<GetDataMode>(
-                  segments: const [
-                    ButtonSegment(
-                      value: GetDataMode.collectorNumber,
-                      icon: Icon(Icons.confirmation_num_outlined),
-                      label: Text('Collector\'s number'),
-                    ),
-                    ButtonSegment(
-                      value: GetDataMode.nameOnly,
-                      icon: Icon(Icons.drive_file_rename_outline_outlined),
-                      label: Text('Card name'),
-                    ),
-                  ],
-                  selected: {_getDataMode},
-                  onSelectionChanged: _running
-                      ? null
-                      : (s) => setState(() => _getDataMode = s.first),
-                ),
-              ),
-
               CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Import related tokens'),
@@ -211,6 +191,18 @@ class _DownloadScreenState extends ConsumerState<DownloadScreen> {
                 onChanged: _running
                     ? null
                     : (v) => setState(() => _importTokens = v ?? true),
+              ),
+
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Scryfall art_crop fallback'),
+                subtitle: const Text(
+                  'Use Scryfall art images when MagicVille has nothing',
+                ),
+                value: _scryfallFallback,
+                onChanged: _running
+                    ? null
+                    : (v) => setState(() => _scryfallFallback = v ?? false),
               ),
 
               const SizedBox(height: 16),
