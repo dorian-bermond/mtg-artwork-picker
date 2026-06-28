@@ -1,0 +1,87 @@
+name: Build desktop apps
+
+# Builds Windows and macOS desktop apps.
+# - Push a tag like `v1.3.0` to build AND publish a GitHub Release with both zips attached.
+# - Or trigger manually (Actions tab -> "Run workflow") to just get downloadable artifacts.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: "3.38.5"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+      - run: dart run build_runner build --delete-conflicting-outputs
+      - run: flutter build windows --release
+
+      # Zip the whole Release folder (exe + DLLs + data/ must stay together).
+      - name: Package Windows build
+        shell: pwsh
+        run: |
+          $src = "build/windows/x64/runner/Release"
+          Compress-Archive -Path "$src/*" -DestinationPath "mtg_artwork_picker-windows-x64.zip" -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: mtg_artwork_picker-windows-x64.zip
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+      - run: dart run build_runner build --delete-conflicting-outputs
+      - run: flutter build macos --release
+
+      # ditto preserves the .app bundle (symlinks, permissions) inside the zip.
+      - name: Package macOS build
+        run: |
+          APP="build/macos/Build/Products/Release/mtg_artwork_picker.app"
+          ditto -c -k --keepParent "$APP" "mtg_artwork_picker-macos.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: mtg_artwork_picker-macos.zip
+
+  release:
+    # Only publish a Release when a tag was pushed.
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/windows-build/mtg_artwork_picker-windows-x64.zip
+            artifacts/macos-build/mtg_artwork_picker-macos.zip
+          generate_release_notes: true
